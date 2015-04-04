@@ -1,0 +1,80 @@
+---
+title: "On ``Sick time follows a simple formula''"
+output: html_document
+---
+
+This is in response to the HackerNews post "Sick Time is Logarithmic" <https://news.ycombinator.com/item?id=9319110>, where the author noticed that the sick time taken at his company seemed strongly related to the ranking of sick time of each employee. The author was gracious enough to provide HackerNews the original data.
+
+We start by loading in the data and cleaning up the column names. The article uses a coding scheme for rank of sick time that is reversed from the way R and other programs handle order statistics. A rank of 1 corresponds to the highest value in the original article. We will continue with this scheme for the sake of consistency.
+
+```{r, warning=FALSE}
+library(ggplot2)
+library(MASS)
+library(car)
+sick = read.csv("~/Desktop/SickTimeData.csv", header=TRUE)
+names(sick) = c("ID", "TimeWorked", "TimeSick")
+sick$SickRank = rank(-sick$TimeSick)
+```
+
+How does the data look relative to an exponential distribution? The CAR library has an easy function to generate quantile-quantile comparison plots with ease.
+```{r}
+qqPlot(sick$TimeSick, 
+       distribution="exp", 
+       main="QQ Plot of Sick Time", 
+       ylab="Sick Time (hrs)")
+```
+
+There's deviation from an exponential distribution out in the right tail (as is usually the case), but it's not too bad. It's not outside the realm of possibility that the sick times are truly exponentially-distributed.
+
+The pattern mentioned by the author is quite clear plotting the Sick Time against rank. Here, a LOESS curve almost perfectly mimics a logarithmic fit of the rank with a negative coefficient.
+
+```{r}
+qplot(SickRank, TimeSick, data=sick) + 
+  labs(title="Sick Time versus Rank of Sick Time") + 
+  stat_smooth(method="loess")
+```
+
+How about the claims made about the $R^2$?
+```{r}
+logModel = lm(TimeSick ~ log(SickRank), data=sick)
+summary(logModel)
+```
+Quite high, as we'd expect from the earlier graphs. This is just attempting to plot the sick time against the sick time ranks, though, without controlling for tenure. The author makes a claim that this model produces an even larger $R^2$, but has the same distribution. The first statement is largely meaningless-- the $R^2$ is a non-decreasing function of the number of predictors in the model. Even if the tenure had almost no impact on the sick time, the $R^2$ would still increase. This is the main reason for the popularity of the Adjusted-$R^2$. 
+
+Let's plot the sick time against the tenure and put a smooth curve through it.
+```{r}
+qplot(TimeWorked, TimeSick, data=sick) + 
+  labs(title="Sick Time versus Total Tenure") + 
+  stat_smooth(method="loess")
+logModelwithTimeWorked = lm(TimeSick ~ log(SickRank) + TimeWorked, data=sick)
+summary(logModelwithTimeWorked)
+```
+
+"It's very interesting to see the exact same distribution as the graph shown above for raw sick time data", the article notes. The fitted linear model is what we'd get if we fit the sick rank with the time worked. The $R^2$ does not increase in any meaningful way, and agrees with the results from the article. But the plot paints a different picture. Perhaps there's not a meaningful linear relationship between tenure and sick time, but there may be a more complicated relationship. Or perhaps the log of the rank of sick time is accounting for much of the variance in the total tenure, so total tenure seems less important than it is. 
+
+And really, why include the rank of the sick time? In order to use the model, you must know the rank of sick time of the employee, relative to all other employees. To calculate this, you have to have the raw sick time numbers. At which point, what’s the point in making a regression with it instead of just working with the raw sick times to begin with? It's like asking whether there is a relationship between sick time and the log of sick time: it does not tell us much. The high $R^2$ makes sense, given such a relationship.
+
+The graph shows something interesting: If we restrict ourselves to linear relationships only, there appears to be a relationship for people under about 6,000 hours, and a different relationship after that. We can fit a piecewise linear regression, which will allow for easy interpretability, provided that each segment be interpretted separately. The ``segmented'' package has an algorithmic way for finding the breakpoint locations, and fitting linear models to each piece. We must specify the linear model, the variable to be segmented, and an initial guess for the location of the breakpoint.
+
+```{r}
+library(segmented)
+sickTimevsTimeWorked = lm(TimeSick ~ TimeWorked, data=sick)
+segmentedSickTimevsTimeWorked = with(sick, segmented(sickTimevsTimeWorked,
+                                          seg.Z = ~TimeWorked, 
+                                          psi=list(TimeWorked=6000)
+                                          )
+                                     )
+summary(segmentedSickTimevsTimeWorked)
+plot(segmentedSickTimevsTimeWorked, 
+     ylab="Sick Time", xlab="Time Worked", 
+     main="Sick Time versus Time Worked",
+     ylim=c(min(sick$TimeSick), max(sick$TimeSick)), xlim=c(min(sick$TimeWorked), max(sick$TimeWorked))
+     )
+points(sick$TimeWorked, sick$TimeSick)
+```
+
+The estimate for the breakpoint is at 6,051 hours, so our guess was quite close. The "U1.TimeWorked" term gives us the difference between the first slope, and the slope after the breakpoint. The asymptotics do not apply for the second linear trend, which is why the library chooses not to report a p-value. 
+
+On average, for employees who have worked less than 6,051 hours (151 full work-weeks, assuming 40-hour weeks), we would expect that for about every 100 hours of time worked, employees would take off 1 hour. For a 40-hour work week, this translates into one day of sick time for every 2.5 weeks, or about 21 days of sick time per year. 
+
+For employees who have worked more than 6,051 hours, the slope is $0.010747 + (-0.008973) = 0.001774$, indicating that for every hundred hours worked, longer-term employees take .1774 hours of sick time--substantially more per hour worked. This is 1 hour of sickness for 563.7 hours worked, or about 1 hour per 14 40-hour work weeks. The Adjusted $R^2$ for this model is .3105. Of course, it does nowhere near as well as the model with the rank of the sick time, but this is to be expected. This model is much more useful, however. Knowing just the employee's tenure, we can make statements about how much sick time they will take. The model does not do well for the employees who have been around a long time, indicating that there is more to how much sick leave is taken than just employee tenure.
