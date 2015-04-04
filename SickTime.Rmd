@@ -3,7 +3,7 @@ title: "On ``Sick time follows a simple formula''"
 output: html_document
 ---
 
-This is in response to the HackerNews post "Sick Time is Logarithmic" <https://news.ycombinator.com/item?id=9319110>, where the author noticed that the sick time taken at his company seemed strongly related to the ranking of sick time of each employee. The author was gracious enough to provide HackerNews the original data.
+This is in response to the HackerNews post "Sick Time is Logarithmic" (<https://news.ycombinator.com/item?id=9319110>), which itself is taken from GreatNotBig's story of the same name (<http://greatnotbig.com/2015/03/sick-time-logarithmic/>), where the author noticed that the sick time taken at his company seemed strongly related to the ranking of sick time of each employee. The author was gracious enough to provide HackerNews the original data.
 
 We start by loading in the data and cleaning up the column names. The article uses a coding scheme for rank of sick time that is reversed from the way R and other programs handle order statistics. A rank of 1 corresponds to the highest value in the original article. We will continue with this scheme for the sake of consistency.
 
@@ -11,7 +11,7 @@ We start by loading in the data and cleaning up the column names. The article us
 library(ggplot2)
 library(MASS)
 library(car)
-sick = read.csv("~/Desktop/SickTimeData.csv", header=TRUE)
+sick = read.csv("SickTimeData.csv", header=TRUE)
 names(sick) = c("ID", "TimeWorked", "TimeSick")
 sick$SickRank = rank(-sick$TimeSick)
 ```
